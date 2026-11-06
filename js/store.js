@@ -3,7 +3,7 @@
    스프레드시트 시트: 설정 / 학생 / 답안   (apps-script/Code.gs 참고)
    실시간 연결 대신 몇 초마다 새로 불러옵니다(학생 30초, 교사 10초).
    ===================================================================== */
-import { SCRIPT_URL } from "./config.js?v=20261106b";
+import { SCRIPT_URL } from "./config.js?v=20261106c";
 
 const LS = "english-writing-v1";
 const TPW = "english-writing-tpw";

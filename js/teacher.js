@@ -1,5 +1,5 @@
-import { ITEMS, ITEM, countWords } from "./items.js?v=20261106b";
-import * as S from "./store.js?v=20261106b";
+import { ITEMS, ITEM, countWords } from "./items.js?v=20261106c";
+import * as S from "./store.js?v=20261106c";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
