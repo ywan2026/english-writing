@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>교사 모드 · Writing Studio</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2334c759'/><text x='50' y='70' font-size='58' text-anchor='middle' fill='white'>✎</text></svg>">
+<link rel="stylesheet" href="css/app.css?v=20261106b">
+</head>
+<body>
+
+<div class="menubar">
+  <div class="logo"></div>
+  <div class="mi app">Writing Studio · 교사</div>
+  <div class="mi" data-menu>파일
+    <div class="dropdown">
+      <button data-act="csv">CSV 내보내기 (현재 보기)</button>
+      <button data-act="csvAll">CSV 내보내기 (전체 문항·전체 반)</button>
+      <hr>
+      <button data-act="student">학생 화면 열기</button>
+      <button data-act="logout">로그아웃</button>
+    </div>
+  </div>
+  <div class="mi" data-menu>보기
+    <div class="dropdown">
+      <button data-act="theme">다크 모드 켜기/끄기</button>
+    </div>
+  </div>
+  <div class="mi" data-act="refresh" title="지금 새로 불러오기">↻ 새로고침</div>
+  <div class="spacer"></div>
+  <div class="status" id="liveStatus"></div>
+  <div class="status" id="clock"></div>
+</div>
+
+<div class="login" id="login">
+  <div class="date" id="lkDate"></div>
+  <div class="time" id="lkTime"></div>
+  <div class="who">
+    <div class="bigav">🧑‍🏫</div>
+    <div class="appname">교사 모드</div>
+    <form class="lf" id="lkForm" autocomplete="off">
+      <input id="lkPw" type="password" inputmode="numeric" maxlength="20" placeholder="교사 암호" autocomplete="off">
+      <button class="go" id="lkGo" type="submit" aria-label="들어가기">→</button>
+    </form>
+    <div class="msg" id="lkMsg"></div>
+    <div class="hint">관리자 모드 · 교사 암호를 입력하세요.<br><a href="./" style="color:#fff">← 학생 화면으로</a></div>
+  </div>
+</div>
+
+<div class="window screen" id="win">
+  <aside class="sidebar">
+    <div class="traffic"><span></span><span></span><span></span></div>
+    <div class="me">
+      <div class="avatar" style="background:linear-gradient(145deg,#30d158,#248a3d)">T</div>
+      <div style="min-width:0"><div class="n">교사 모드</div><div class="s" id="tEmail" style="overflow:hidden;text-overflow:ellipsis"></div></div>
+    </div>
+    <nav class="nav">
+      <button data-go="all" id="navAll"><span class="ico" style="background:linear-gradient(145deg,#5ac8fa,#0a84ff)">▦</span><span class="lbl">전체 현황</span></button>
+      <div class="grp">문항별 답안</div>
+      <div id="navItems"></div>
+      <div class="grp">문항 공개 (학생 화면)</div>
+      <div id="openRows"></div>
+    </nav>
+    <div class="side-foot" id="sideFoot"></div>
+  </aside>
+  <main class="main">
+    <div class="toolbar" id="toolbar"></div>
+    <div class="content"><div class="page" id="page" style="max-width:1080px"></div></div>
+  </main>
+</div>
+
+<div class="scrim" id="sheet"><div class="sheet" id="sheetBox"></div></div>
+<div class="loading" id="loading"><div><span class="spinner"></span><span id="loadingT">불러오는 중…</span></div></div>
+<div class="toast" id="toast"><div class="ico" id="toastI" style="background:#0a84ff">✓</div><div><b id="toastT"></b><span id="toastM"></span></div></div>
+
+<script type="module" src="js/teacher.js?v=20261106b"></script>
+</body>
+</html>
