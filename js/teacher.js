@@ -1,6 +1,6 @@
-import { ITEMS, ITEM, countWords } from "./items.js?v=20261110a";
-import * as S from "./store.js?v=20261110a";
-import { buildFeedbackCsv, readFeedbackCsv, buildPrompt, wordDiff } from "./feedback.js?v=20261110a";
+import { ITEMS, ITEM, countWords } from "./items.js?v=20261110b";
+import * as S from "./store.js?v=20261110b";
+import { buildFeedbackCsv, readFeedbackCsv, buildPrompt, wordDiff } from "./feedback.js?v=20261110b";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -37,6 +37,7 @@ document.addEventListener("click", e => {
   if (g) { st.view = g.dataset.go; st.filter = "all"; render(); }
 });
 function doAct(a) {
+  if (a === "sidebar") setSidebar(!$("#win").classList.contains("sb-collapsed"));
   if (a === "theme") { const d = document.documentElement; const on = d.dataset.theme !== "dark"; d.dataset.theme = on ? "dark" : ""; localStorage.setItem("ew-theme", on ? "dark" : ""); }
   if (a === "csv") exportCsv(false);
   if (a === "csvAll") exportCsv(true);
@@ -45,6 +46,14 @@ function doAct(a) {
   if (a === "logout") { S.teacherLogout(); location.href = "./"; }
 }
 if (localStorage.getItem("ew-theme") === "dark") document.documentElement.dataset.theme = "dark";
+/* 사이드바 접기 (상태 기억) */
+function setSidebar(collapsed) {
+  $("#win").classList.toggle("sb-collapsed", collapsed);
+  localStorage.setItem("ew-sidebar", collapsed ? "1" : "");
+  const t = $("#sbToggle"); t.title = collapsed ? "사이드바 펼치기 (⌘\\ / Ctrl+\\)" : "사이드바 접기 (⌘\\ / Ctrl+\\)"; t.setAttribute("aria-label", collapsed ? "사이드바 펼치기" : "사이드바 접기");
+}
+setSidebar(localStorage.getItem("ew-sidebar") === "1");
+document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "\\") { e.preventDefault(); setSidebar(!$("#win").classList.contains("sb-collapsed")); } });
 function tick() {
   const d = new Date(), days = ["일", "월", "화", "수", "목", "금", "토"];
   $("#clock").textContent = `${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]}) ${d.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" })}`;

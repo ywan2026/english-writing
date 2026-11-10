@@ -1,7 +1,7 @@
 /* =====================================================================
    피드백 — 피드백용 CSV 만들기, Claude에 줄 프롬프트, 돌려받은 CSV 읽기
    ===================================================================== */
-import { ITEMS, ITEM, countWords } from "./items.js?v=20261110a";
+import { ITEMS, ITEM, countWords } from "./items.js?v=20261110b";
 
 /* 피드백용 CSV 열 (마지막 3개를 Claude가 채움) */
 export const FB_COLS = {

@@ -6,7 +6,7 @@
 <title>교사 모드 · Writing Studio</title>
 <meta name="robots" content="noindex">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2334c759'/><text x='50' y='70' font-size='58' text-anchor='middle' fill='white'>✎</text></svg>">
-<link rel="stylesheet" href="css/app.css?v=20261110a">
+<link rel="stylesheet" href="css/app.css?v=20261110b">
 </head>
 <body>
 
@@ -24,6 +24,7 @@
   </div>
   <div class="mi" data-menu>보기
     <div class="dropdown">
+      <button data-act="sidebar">사이드바 접기/펼치기 <span style="opacity:.6">⌘\</span></button>
       <button data-act="theme">다크 모드 켜기/끄기</button>
     </div>
   </div>
@@ -48,7 +49,7 @@
   </div>
 </div>
 
-<div class="window screen" id="win">
+<div class="window screen collapsible" id="win">
   <aside class="sidebar">
     <div class="traffic"><span></span><span></span><span></span></div>
     <div class="me">
@@ -67,6 +68,12 @@
     <div class="side-foot" id="sideFoot"></div>
   </aside>
   <main class="main">
+    <div class="sbctl">
+      <div class="traffic mini"><span></span><span></span><span></span></div>
+      <button id="sbToggle" data-act="sidebar" title="사이드바 접기 (⌘\ / Ctrl+\)" aria-label="사이드바 접기">
+        <svg width="18" height="15" viewBox="0 0 18 15" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="1" width="16" height="13" rx="3"/><path d="M6.5 1v13"/><path d="M2.8 4.2h2M2.8 6.5h2M2.8 8.8h2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
     <div class="toolbar" id="toolbar"></div>
     <div class="content"><div class="page" id="page" style="max-width:1080px"></div></div>
   </main>
@@ -76,6 +83,6 @@
 <div class="loading" id="loading"><div><span class="spinner"></span><span id="loadingT">불러오는 중…</span></div></div>
 <div class="toast" id="toast"><div class="ico" id="toastI" style="background:#0a84ff">✓</div><div><b id="toastT"></b><span id="toastM"></span></div></div>
 
-<script type="module" src="js/teacher.js?v=20261110a"></script>
+<script type="module" src="js/teacher.js?v=20261110b"></script>
 </body>
 </html>

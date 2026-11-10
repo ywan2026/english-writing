@@ -1,6 +1,6 @@
-import { ITEMS, ITEM, countWords, taskFromChecks, capFor, totalOf } from "./items.js?v=20261110a";
-import * as S from "./store.js?v=20261110a";
-import { wordDiff } from "./feedback.js?v=20261110a";
+import { ITEMS, ITEM, countWords, taskFromChecks, capFor, totalOf } from "./items.js?v=20261110b";
+import * as S from "./store.js?v=20261110b";
+import { wordDiff } from "./feedback.js?v=20261110b";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];

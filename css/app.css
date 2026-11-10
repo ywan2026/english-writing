@@ -377,3 +377,19 @@ mark.add{background:rgba(52,199,89,.28);color:inherit;border-radius:3px;padding:
 .fbtbl .clip.en{font-size:13px}
 .fbedit{display:flex;flex-direction:column;gap:10px}
 .fbedit label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:700;color:var(--text-2)}
+
+/* ---------- 사이드바 접기 (교사 화면) ---------- */
+.window.collapsible .main{position:relative}
+.window.collapsible .sidebar{overflow:hidden;transition:width .25s ease,border-color .25s}
+.window.collapsible .sidebar > *{min-width:228px}
+.window.collapsible .toolbar{padding-left:54px;transition:padding-left .25s ease}
+.sbctl{position:absolute;top:0;left:0;height:52px;display:flex;align-items:center;gap:10px;padding-left:12px;z-index:2}
+.sbctl .traffic.mini{display:none;padding:0}
+#sbToggle{width:32px;height:28px;border:0;border-radius:6px;background:none;color:var(--text-2);display:grid;place-items:center}
+#sbToggle:hover{background:rgba(0,0,0,.06);color:var(--text)}
+[data-theme="dark"] #sbToggle:hover{background:rgba(255,255,255,.08)}
+.window.sb-collapsed .sidebar{width:0;border-right-color:transparent}
+.window.sb-collapsed .sbctl{padding-left:16px}
+.window.sb-collapsed .sbctl .traffic.mini{display:flex}
+.window.collapsible.sb-collapsed .toolbar{padding-left:122px}
+.window.sb-collapsed .page{max-width:1200px!important}
