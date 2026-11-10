@@ -1,5 +1,6 @@
-import { ITEMS, ITEM, countWords, taskFromChecks, capFor, totalOf } from "./items.js?v=20261106c";
-import * as S from "./store.js?v=20261106c";
+import { ITEMS, ITEM, countWords, taskFromChecks, capFor, totalOf } from "./items.js?v=20261110a";
+import * as S from "./store.js?v=20261110a";
+import { wordDiff } from "./feedback.js?v=20261110a";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -8,6 +9,7 @@ const SESSION = "english-writing-session";
 const GDRAFT = "english-writing-grade";
 
 const st = {
+  fbFlags: null,       // 피드백 공개 여부
   me: null,            // {sid, name, cls}
   open: {},            // 공개된 문항
   ans: {},             // qid -> doc
@@ -131,10 +133,13 @@ async function enter(me) {
   unSettings && unSettings();
   unSettings = S.watchSettings(s => {
     const prev = st.open; st.open = s.open || {};
+    const pfb = st.fbFlags; st.fbFlags = s.fb || {};
+    if (pfb && ITEMS.some(i => !!pfb[i.id] !== !!st.fbFlags[i.id])) refreshFeedback(ITEMS.some(i => st.fbFlags[i.id] && !pfb[i.id]));
     const newly = ITEMS.filter(i => st.open[i.id] && !prev[i.id] && Object.keys(prev).length);
     if (newly.length) toast("새 문항이 열렸어요", newly.map(i => `${i.no}. ${i.short}`).join(", "), "🔓", "#34c759");
     renderNav();
     if (st.view === "home") renderHome();
+    else if (st.view === "fb") {}
     else if (!isSubmitted(st.view) && !!prev[st.view] !== !!st.open[st.view]) renderItem(st.view);
   });
   go("home");
@@ -175,19 +180,69 @@ function renderNav() {
       <span class="ico" style="background:${i.color}">${i.glyph}</span><span class="lbl">${i.no}. ${esc(i.short)}</span>${badge(s)}</button>`;
   }).join("");
   $("#navHome").classList.toggle("active", st.view === "home");
+  const n = fbItems().length, unseen = fbItems().filter(i => !seenFb(i.id)).length;
+  $("#navFb").classList.toggle("active", st.view === "fb");
+  $("#navFbBadge").innerHTML = unseen ? `<span class="badge new-fb">새 피드백 ${unseen}</span>` : n ? `<span class="badge done">${n}</span>` : "";
 }
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-go]"); if (!b) return;
   const q = b.dataset.go;
-  if (q !== "home" && !canView(q)) { toast("아직 열리지 않은 문항이에요", "선생님이 열어 주시면 풀 수 있어요.", "🔒", "#8e8e93"); return; }
+  if (q !== "home" && q !== "fb" && !canView(q)) { toast("아직 열리지 않은 문항이에요", "선생님이 열어 주시면 풀 수 있어요.", "🔒", "#8e8e93"); return; }
   go(q);
 });
 async function go(v) {
   await flushSave();
   st.view = v; st.g = null;
   renderNav();
-  if (v === "home") renderHome(); else renderItem(v);
+  if (v === "home") renderHome(); else if (v === "fb") { renderFb(); refreshFeedback(false); } else renderItem(v);
   $("#content").scrollTop = 0;
+}
+
+/* ---------------- 선생님 피드백 ---------------- */
+const hasFb = (a) => !!(a && (a.fbGood || a.fbFix || a.fbRewrite));
+const fbItems = () => ITEMS.filter(i => st.fbFlags?.[i.id] && hasFb(st.ans[i.id]));
+const fbSeenKey = (q) => `english-writing-fbseen:${st.me?.sid}:${q}`;
+const seenFb = (q) => { const a = st.ans[q]; return !a || localStorage.getItem(fbSeenKey(q)) === String(a.fbAt || ""); };
+async function refreshFeedback(announce) {
+  if (!st.me) return;
+  try {
+    const before = fbItems().length;
+    const fresh = await S.getMyAnswers(st.me.sid, ITEMS.map(i => i.id), st.me.name);
+    ITEMS.forEach(i => {   // 피드백 관련 칸만 새로 반영 (쓰던 답안은 그대로)
+      const f = fresh[i.id]; if (!f) return;
+      st.ans[i.id] = { ...(st.ans[i.id] || {}), fbGood: f.fbGood, fbFix: f.fbFix, fbRewrite: f.fbRewrite, fbAt: f.fbAt };
+    });
+    renderNav();
+    if (st.view === "fb") renderFb();
+    if (announce && fbItems().length > before) toast("선생님 피드백이 도착했어요", "왼쪽 '선생님 피드백'에서 확인하세요.", "💌", "#ff9f0a");
+  } catch (e) { console.error(e); }
+}
+function diffHtml(from, to) { return wordDiff(from, to).map(x => x.add ? `<mark class="add">${esc(x.t)}</mark>` : esc(x.t)).join(""); }
+function renderFb() {
+  $("#toolbar").innerHTML = `<h1>선생님 피드백</h1>`;
+  const list = fbItems();
+  const cards = ITEMS.map(i => {
+    const a = st.ans[i.id];
+    const head = `<div class="fbhead"><span class="ico" style="background:${i.color}">${i.glyph}</span><b>${i.no}. ${esc(i.short)}</b>
+      ${a?.gradedAt ? `<span class="badge done">자가채점 ${a.selfTotal}/${i.points}</span>` : ""}${hasFb(a) && st.fbFlags?.[i.id] && !seenFb(i.id) ? '<span class="badge new-fb">NEW</span>' : ""}</div>`;
+    if (!(st.fbFlags?.[i.id] && hasFb(a))) {
+      const why = !a?.gradedAt ? "자가채점까지 마치면 선생님 피드백을 받을 수 있어요." : "선생님이 피드백을 준비하고 있어요.";
+      return `<div class="fbcard muted">${head}<div class="fbwait">${why}</div></div>`;
+    }
+    return `<div class="fbcard">${head}
+      <div class="cmp" style="margin:12px 0">
+        <div class="card"><div class="ch">📝 내가 고쳐 쓴 답안</div><div class="cb">${esc(a.revised || a.answer)}</div></div>
+        <div class="card"><div class="ch">✅ 선생님이 다듬은 문장 <span class="r"><mark class="add">초록색</mark> = 바뀐 부분</span></div><div class="cb ex">${diffHtml(a.revised || a.answer, a.fbRewrite)}</div></div>
+      </div>
+      ${a.fbGood ? `<div class="fbr good"><span class="fbt">👍 잘한 점</span>${esc(a.fbGood)}</div>` : ""}
+      ${a.fbFix ? `<div class="fbr fix"><span class="fbt">✏️ 고칠 점</span>${esc(a.fbFix)}</div>` : ""}
+    </div>`;
+  }).join("");
+  $("#page").innerHTML = `<div class="hero"><div class="ico" style="background:linear-gradient(145deg,#ff9f0a,#ff375f)">💌</div>
+      <div><h2>선생님 피드백</h2><p>${list.length ? `피드백 ${list.length}개가 도착했어요. 잘한 점은 기억하고, 고칠 점은 다음 글쓰기에 꼭 써 보세요.` : "아직 공개된 피드백이 없어요. 선생님이 공개하면 여기에 나타나요."}</p></div></div>
+    <div class="fblist">${cards}</div>`;
+  list.forEach(i => localStorage.setItem(fbSeenKey(i.id), String(st.ans[i.id].fbAt || "")));
+  setTimeout(renderNav, 0);
 }
 
 /* ---------------- 홈 ---------------- */

@@ -17,9 +17,11 @@ const ANS_COLS = [
   ['draftAt', '임시저장 시각'], ['submittedAt', '제출 시각'],
   ['checks', '조건 체크'], ['s_task', '과제 점수'], ['s_content', '내용 및 구성 점수'], ['s_lang', '언어 사용 점수'],
   ['r_task', '과제 근거'], ['r_content', '내용 및 구성 근거'], ['r_lang', '언어 사용 근거'],
-  ['revised', '고쳐 쓴 답안'], ['selfTotal', '자가채점 합계'], ['gradedAt', '자가채점 시각'], ['updatedAt', '마지막 저장 시각']
+  ['revised', '고쳐 쓴 답안'], ['selfTotal', '자가채점 합계'], ['gradedAt', '자가채점 시각'], ['updatedAt', '마지막 저장 시각'],
+  ['fbGood', '피드백: 잘한 점'], ['fbFix', '피드백: 고칠 점'], ['fbRewrite', '피드백: 고친 문장'], ['fbAt', '피드백 입력 시각']
 ];
-const TIME_KEYS = ['createdAt', 'draftAt', 'submittedAt', 'gradedAt', 'updatedAt'];
+const FB_KEYS = ['fbGood', 'fbFix', 'fbRewrite', 'fbAt'];
+const TIME_KEYS = ['createdAt', 'draftAt', 'submittedAt', 'gradedAt', 'updatedAt', 'fbAt'];
 const STUDENT_FIELDS = ['answer', 'signName', 'words', 'draftAt', 'submittedAt', 'checks', 'scores', 'reasons', 'revised', 'selfTotal', 'gradedAt'];
 const LOCKED_AFTER_SUBMIT = ['answer', 'signName', 'words', 'draftAt', 'submittedAt'];
 
@@ -32,6 +34,7 @@ function doPost(e) {
   try {
     const fn = ACTIONS[req.action];
     if (!fn) return out({ ok: false, error: 'UNKNOWN_ACTION' });
+    ensureHeaders();
     if (req.action.charAt(0) === 't' && (TEACHER_PASSWORD === 'CHANGE_ME' || String(req.pw) !== TEACHER_PASSWORD)) return out({ ok: false, error: 'WRONG_PASSWORD' });
     return out(Object.assign({ ok: true }, fn(req) || {}));
   } catch (err) {
@@ -52,12 +55,12 @@ const ACTIONS = {
     sheet(SH_STU).appendRow([sid, name, +sid.slice(1, 3), +sid.slice(3), new Date()]);
     return { exists: false, name: name };
   }),
-  state: () => ({ open: readOpen() }),
+  state: () => ({ open: readOpen(), fb: readFb() }),
   mine: (r) => {
     checkStudent(r.sid, r.name);
-    const all = readAnswers(), res = {};
-    QIDS.forEach(q => { res[q] = all[r.sid + '_' + q] || null; });
-    return { answers: res, open: readOpen() };
+    const all = readAnswers(), res = {}, fb = readFb();
+    QIDS.forEach(q => { res[q] = hideFb(all[r.sid + '_' + q] || null, fb); });
+    return { answers: res, open: readOpen(), fb: fb };
   },
   save: (r) => withLock(() => {
     checkStudent(r.sid, r.name);
@@ -82,19 +85,29 @@ const ACTIONS = {
     });
     cur.name = r.name; cur.cls = +String(r.sid).slice(1, 3); cur.updatedAt = now;
     writeAnswer(sh, row, cur);
-    return { answer: pack(cur) };
+    return { answer: hideFb(pack(cur), readFb()) };
   }),
 
   /* ----- 교사 (암호 필요) ----- */
   tCheck: () => ({}),
-  tAll: () => ({ students: readStudents(), answers: readAnswers(), open: readOpen() }),
-  tSetOpen: (r) => withLock(() => {
-    if (QIDS.indexOf(r.qid) < 0) throw new Error('BAD_QID');
-    const sh = sheet(SH_SET), v = sh.getDataRange().getValues(), key = 'open_' + r.qid;
-    let found = false;
-    for (let i = 1; i < v.length; i++) if (v[i][0] === key) { sh.getRange(i + 1, 2).setValue(!!r.val); found = true; }
-    if (!found) sh.appendRow([key, !!r.val]);
-    return { open: readOpen() };
+  tAll: () => ({ students: readStudents(), answers: readAnswers(), open: readOpen(), fb: readFb() }),
+  tSetOpen: (r) => withLock(() => { setFlag('open_', r.qid, r.val); return { open: readOpen() }; }),
+  tSetFb: (r) => withLock(() => { setFlag('fb_', r.qid, r.val); return { fb: readFb() }; }),
+  /* 피드백 입력: rows = [{sid, qid, good, fix, rewrite}] (CSV 업로드·직접 수정) */
+  tFeedback: (r) => withLock(() => {
+    const sh = sheet(SH_ANS), last = sh.getLastRow();
+    const ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getValues().map(x => String(x[0])) : [];
+    const c0 = ANS_COLS.findIndex(c => c[0] === 'fbGood') + 1, now = new Date();
+    const clip = (v) => { v = String(v == null ? '' : v).slice(0, 3000); return /^[=+\-@]/.test(v) ? "'" + v : v; };
+    let updated = 0; const missing = [];
+    (r.rows || []).forEach(x => {
+      const id = String(x.sid) + '_' + String(x.qid), i = ids.indexOf(id);
+      if (i < 0) { missing.push(id); return; }
+      const has = [x.good, x.fix, x.rewrite].some(v => String(v == null ? '' : v).trim());
+      sh.getRange(i + 2, c0, 1, 4).setValues([[clip(x.good), clip(x.fix), clip(x.rewrite), has ? now : '']]);
+      updated++;
+    });
+    return { updated: updated, missing: missing };
   }),
   tReopen: (r) => withLock(() => {
     const sh = sheet(SH_ANS), { row, obj } = findAnswerRow(sh, r.sid + '_' + r.qid);
@@ -136,9 +149,9 @@ function setup() {
     return sh;
   };
   const set = make(SH_SET, ['항목', '값'], [120, 80]);
-  if (set.getLastRow() === 1) QIDS.forEach(q => set.appendRow(['open_' + q, false]));
+  if (set.getLastRow() === 1) { QIDS.forEach(q => set.appendRow(['open_' + q, false])); QIDS.forEach(q => set.appendRow(['fb_' + q, false])); }
   make(SH_STU, STU_COLS.map(c => c[1]), [70, 90, 50, 50, 150]);
-  make(SH_ANS, ANS_COLS.map(c => c[1]), [100, 70, 50, 80, 40, 360, 100, 60, 140, 140, 90, 70, 70, 70, 200, 200, 200, 360, 80, 140, 140]);
+  make(SH_ANS, ANS_COLS.map(c => c[1]), [100, 70, 50, 80, 40, 360, 100, 60, 140, 140, 90, 70, 70, 70, 200, 200, 200, 360, 80, 140, 140, 260, 260, 360, 140]);
   const def = s.getSheetByName('시트1') || s.getSheetByName('Sheet1');
   if (def && s.getSheets().length > 3 && def.getLastRow() === 0) s.deleteSheet(def);
 }
@@ -150,14 +163,38 @@ function withLock(fn) {
 const cleanName = (s) => String(s || '').replace(/\s+/g, '').trim();
 const ms = (v) => (v instanceof Date) ? v.getTime() : (v === '' || v === null || v === undefined ? null : v);
 
-function readOpen() {
+function readFlags(prefix) {
   const v = sheet(SH_SET).getDataRange().getValues(), o = {};
   QIDS.forEach(q => o[q] = false);
   for (let i = 1; i < v.length; i++) {
     const k = String(v[i][0]);
-    if (k.indexOf('open_') === 0) o[k.slice(5)] = v[i][1] === true || String(v[i][1]).toUpperCase() === 'TRUE';
+    if (k.indexOf(prefix) === 0) o[k.slice(prefix.length)] = v[i][1] === true || String(v[i][1]).toUpperCase() === 'TRUE';
   }
   return o;
+}
+const readOpen = () => readFlags('open_');   // 문항 공개
+const readFb = () => readFlags('fb_');       // 피드백 공개
+function setFlag(prefix, qid, val) {
+  if (QIDS.indexOf(qid) < 0) throw new Error('BAD_QID');
+  const sh = sheet(SH_SET), v = sh.getDataRange().getValues(), key = prefix + qid;
+  let found = false;
+  for (let i = 1; i < v.length; i++) if (v[i][0] === key) { sh.getRange(i + 1, 2).setValue(!!val); found = true; }
+  if (!found) sh.appendRow([key, !!val]);
+}
+/* 공개 전 피드백은 학생에게 보내지 않음 */
+function hideFb(a, fb) {
+  if (!a) return a;
+  if (!fb[a.qid]) FB_KEYS.forEach(k => delete a[k]);
+  return a;
+}
+/* 예전 시트에 새 열(피드백) 머리글이 없으면 채워 넣기 */
+function ensureHeaders() {
+  const sh = sheet(SH_ANS), n = ANS_COLS.length;
+  if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
+  const h = sh.getRange(1, 1, 1, n).getValues()[0];
+  if (h[n - 1] !== ANS_COLS[n - 1][1]) {
+    sh.getRange(1, 1, 1, n).setValues([ANS_COLS.map(c => c[1])]).setFontWeight('bold').setBackground('#e8f0fe');
+  }
 }
 function readStudents() {
   const v = sheet(SH_STU).getDataRange().getValues(), o = {};
@@ -178,9 +215,9 @@ function checkStudent(sid, name) {
 
 /* 행 → 객체 */
 function rowToObj(r) {
-  const raw = {}; ANS_COLS.forEach(([k], j) => raw[k] = r[j]);
+  const raw = {}; ANS_COLS.forEach(([k], j) => raw[k] = (r[j] === undefined || r[j] === null) ? '' : r[j]);
   const o = {};
-  ['id', 'sid', 'qid', 'name', 'answer', 'signName', 'revised'].forEach(k => o[k] = raw[k] === '' ? '' : String(raw[k]));
+  ['id', 'sid', 'qid', 'name', 'answer', 'signName', 'revised', 'fbGood', 'fbFix', 'fbRewrite'].forEach(k => o[k] = raw[k] === '' ? '' : String(raw[k]));
   o.cls = raw.cls === '' ? null : +raw.cls;
   o.words = raw.words === '' ? 0 : +raw.words;
   TIME_KEYS.forEach(k => { if (k in raw) o[k] = ms(raw[k]); });
@@ -208,7 +245,7 @@ function objToRow(o) {
     let v = flat[k];
     if (v === undefined || v === null) return '';
     if (TIME_KEYS.indexOf(k) >= 0 && typeof v === 'number') return new Date(v);
-    if (typeof v === 'string' && /^[=+\-@]/.test(v) && ['answer', 'revised', 'signName', 'r_task', 'r_content', 'r_lang', 'name'].indexOf(k) >= 0) return "'" + v;
+    if (typeof v === 'string' && /^[=+\-@]/.test(v) && ['answer', 'revised', 'signName', 'r_task', 'r_content', 'r_lang', 'name', 'fbGood', 'fbFix', 'fbRewrite'].indexOf(k) >= 0) return "'" + v;
     return v;
   });
 }

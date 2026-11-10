@@ -3,7 +3,7 @@
    스프레드시트 시트: 설정 / 학생 / 답안   (apps-script/Code.gs 참고)
    실시간 연결 대신 몇 초마다 새로 불러옵니다(학생 30초, 교사 10초).
    ===================================================================== */
-import { SCRIPT_URL } from "./config.js?v=20261106c";
+import { SCRIPT_URL } from "./config.js?v=20261110a";
 
 const LS = "english-writing-v1";
 const TPW = "english-writing-tpw";
@@ -81,12 +81,15 @@ export async function createStudent(sid, name) {
 }
 
 export function watchSettings(cb) {
-  if (!remote) { const run = () => cb(lsGet().settings || { open: {} }); run(); return onLocal(run); }
-  return poll(async () => { const r = await call("state", {}, 1); cb({ open: r.open }); }, 30000);
+  if (!remote) { const run = () => { const st = lsGet().settings || {}; cb({ open: st.open || {}, fb: st.fb || {} }); }; run(); return onLocal(run); }
+  return poll(async () => { const r = await call("state", {}, 1); cb({ open: r.open, fb: r.fb || {} }); }, 30000);
 }
 
 export async function getMyAnswers(sid, qids, name) {
-  if (!remote) { const A = lsGet().answers || {}; return Object.fromEntries(qids.map(q => [q, A[aid(sid, q)] || null])); }
+  if (!remote) {
+    const o = lsGet(), A = o.answers || {}, fb = o.settings?.fb || {};
+    return Object.fromEntries(qids.map(q => [q, hideFb(A[aid(sid, q)] ? { ...A[aid(sid, q)] } : null, fb)]));
+  }
   const r = await call("mine", { sid, name });
   return r.answers;
 }
@@ -101,7 +104,7 @@ export async function saveAnswer(base, patch) {
       const now = Date.now(), p = {};
       for (const [k, v] of Object.entries(patch)) p[k] = v === NOW ? now : v;
       o.answers[id] = { ...cur, ...base, id, ...p, updatedAt: now };
-      return o.answers[id];
+      return hideFb({ ...o.answers[id] }, o.settings.fb || {});
     });
   }
   const r = await call("save", { sid: base.sid, name: base.name, qid: base.qid, patch });
@@ -109,6 +112,9 @@ export async function saveAnswer(base, patch) {
 }
 
 export function signOutStudent() {}
+
+const FB_KEYS = ["fbGood", "fbFix", "fbRewrite", "fbAt"];
+function hideFb(a, fb) { if (a && !fb[a.qid]) FB_KEYS.forEach(k => delete a[k]); return a; }
 
 /* ================= 교사 ================= */
 export const teacherSession = () => sessionStorage.getItem(TPW);
@@ -125,14 +131,44 @@ export async function setOpen(qid, val) {
   await tcall("tSetOpen", { qid, val });
 }
 
-/* cb({students, answers, open}) */
+export async function setFb(qid, val) {
+  if (!remote) { lsPatch(o => { o.settings.fb = { ...(o.settings.fb || {}), [qid]: val }; }); return; }
+  await tcall("tSetFb", { qid, val });
+}
+
+/* 피드백 저장: rows = [{sid, qid, good, fix, rewrite}] → {updated, missing[]} */
+export async function saveFeedback(rows, onProgress) {
+  if (!remote) {
+    return lsPatch(o => {
+      let updated = 0; const missing = [];
+      rows.forEach(x => {
+        const a = o.answers[aid(x.sid, x.qid)];
+        if (!a) { missing.push(aid(x.sid, x.qid)); return; }
+        const has = [x.good, x.fix, x.rewrite].some(v => (v || "").trim());
+        Object.assign(a, { fbGood: x.good || "", fbFix: x.fix || "", fbRewrite: x.rewrite || "", fbAt: has ? Date.now() : null });
+        if (!has) delete a.fbAt;
+        updated++;
+      });
+      return { updated, missing };
+    });
+  }
+  let updated = 0; const missing = [];
+  for (let i = 0; i < rows.length; i += 40) {
+    const r = await tcall("tFeedback", { rows: rows.slice(i, i + 40) });
+    updated += r.updated; missing.push(...r.missing);
+    onProgress && onProgress(Math.min(i + 40, rows.length), rows.length);
+  }
+  return { updated, missing };
+}
+
+/* cb({students, answers, open, fb}) */
 export function watchAll(cb, onErr) {
   if (!remote) {
-    const run = () => { const o = lsGet(); cb({ students: o.students || {}, answers: o.answers || {}, open: o.settings?.open || {} }); };
+    const run = () => { const o = lsGet(); cb({ students: o.students || {}, answers: o.answers || {}, open: o.settings?.open || {}, fb: o.settings?.fb || {} }); };
     run(); return onLocal(run);
   }
   return poll(async () => {
-    try { const r = await tcall("tAll"); cb({ students: r.students, answers: r.answers, open: r.open }); }
+    try { const r = await tcall("tAll"); cb({ students: r.students, answers: r.answers, open: r.open, fb: r.fb || {} }); }
     catch (e) { onErr && onErr(e); throw e; }
   }, 10000);
 }

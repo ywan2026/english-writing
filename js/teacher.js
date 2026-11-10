@@ -1,5 +1,6 @@
-import { ITEMS, ITEM, countWords } from "./items.js?v=20261106c";
-import * as S from "./store.js?v=20261106c";
+import { ITEMS, ITEM, countWords } from "./items.js?v=20261110a";
+import * as S from "./store.js?v=20261110a";
+import { buildFeedbackCsv, readFeedbackCsv, buildPrompt, wordDiff } from "./feedback.js?v=20261110a";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -7,7 +8,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<"
 const QIDS = ITEMS.map(i => i.id);
 const KEYS = [["task", "과제"], ["content", "내용 및 구성"], ["lang", "언어 사용"]];
 
-const st = { students: {}, answers: {}, open: {}, view: "all", cls: "all", q: "", filter: "all", un: [] };
+const st = { students: {}, answers: {}, open: {}, fb: {}, fbPreview: null, fbOpt: { q: "all", skip: true }, view: "all", cls: "all", q: "", filter: "all", un: [] };
 
 /* ---------- UI helpers ---------- */
 function toast(t, m = "", icon = "✓", color = "#0a84ff") {
@@ -80,7 +81,10 @@ function render() {
       <select id="fCls"><option value="all">전체 반</option>${classes().map(c => `<option value="${c}" ${+st.cls === c ? "selected" : ""}>3학년 ${c}반</option>`).join("")}</select>
       <input class="field" id="fQ" placeholder="학번·이름 검색" value="${esc(st.q)}">
     </div>`;
-  if (st.view === "all") renderAll(filt); else renderItem(st.view, filt);
+  if (st.view === "all") renderAll(filt);
+  else if (st.view === "fbmake") renderFbMake(filt);
+  else if (st.view.startsWith("fb-")) renderFbItem(st.view.slice(3), filt);
+  else renderItem(st.view, filt);
   const c = $("#fCls"); c && (c.onchange = () => { st.cls = c.value; render(); });
   const q = $("#fQ"); q && (q.oninput = () => { st.q = q.value.trim(); clearTimeout(render._t); render._t = setTimeout(() => { render(); const n = $("#fQ"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
 }
@@ -91,6 +95,13 @@ function renderSide() {
     return `<button data-go="${i.id}" class="${st.view === i.id ? "active" : ""}"><span class="ico" style="background:${i.color}">${i.glyph}</span>
       <span class="lbl">${i.no}. ${esc(i.short)}</span><span class="badge sub">${n}</span></button>`;
   }).join("");
+  $("#fbNav").innerHTML = `<button data-go="fbmake" class="${st.view === "fbmake" ? "active" : ""}"><span class="ico" style="background:linear-gradient(145deg,#ff9f0a,#ff375f)">✦</span><span class="lbl">피드백 만들기 (CSV)</span></button>` +
+    ITEMS.map(i => {
+      const all = Object.values(st.answers).filter(a => a.qid === i.id && a.gradedAt);
+      const n = all.filter(hasFb).length;
+      return `<button data-go="fb-${i.id}" class="${st.view === "fb-" + i.id ? "active" : ""}"><span class="ico" style="background:${i.color}">${i.glyph}</span>
+        <span class="lbl">${i.no}번 피드백</span>${st.fb[i.id] ? '<span class="badge done">공개</span>' : ""}<span class="badge sub">${n}/${all.length}</span></button>`;
+    }).join("");
   $("#openRows").innerHTML = ITEMS.map(i => `<div class="qrow"><span class="ico" style="background:${i.color}">${i.glyph}</span>
       <span class="lbl" style="flex:1">${i.no}번 ${st.open[i.id] ? "<b style='color:#1f8a3a'>공개 중</b>" : "<span style='color:var(--text-3)'>닫힘</span>"}</span>
       <button class="switch ${st.open[i.id] ? "on" : ""}" data-open="${i.id}" aria-label="${i.no}번 공개"></button></div>`).join("");
@@ -152,10 +163,197 @@ function renderItem(q, filt) {
           <span class="r"><button class="pill ghost" data-cell="${s.sid}|${q}">자세히</button></span></div>
         <div class="ab"><div><span class="lab">${a.submittedAt ? "제출 답안" : "쓰는 중인 답안"}</span>${esc(a.answer)}${a.signName ? `\n[ ${esc(a.signName)} ]` : ""}</div>
           <div><span class="lab">고쳐 쓴 답안</span>${a.revised ? esc(a.revised) : '<span style="color:var(--text-3)">—</span>'}</div></div>
-        ${scoreLine(i, a)}</div>`).join("")}</div>`
+        ${scoreLine(i, a)}${hasFb(a) ? fbBlock(a) : ""}</div>`).join("")}</div>`
       : `<div class="empty">${st.filter === "all" ? "아직 이 문항에 답안을 쓴 학생이 없어요." : "해당하는 학생이 없어요."}</div>`}`;
   $$("[data-f]").forEach(b => b.onclick = () => { st.filter = b.dataset.f; render(); });
   $$("[data-cell]").forEach(b => b.onclick = () => { const [sid, qq] = b.dataset.cell.split("|"); detail(sid, qq); });
+}
+
+/* ---------- 피드백 ---------- */
+const hasFb = (a) => !!(a && (a.fbGood || a.fbFix || a.fbRewrite));
+function diffHtml(from, to) {
+  return wordDiff(from, to).map(x => x.add ? `<mark class="add">${esc(x.t)}</mark>` : esc(x.t)).join("");
+}
+function fbBlock(a) {
+  if (!hasFb(a)) return `<div class="fbx empty-fb">아직 피드백이 없어요.</div>`;
+  return `<div class="fbx">
+    ${a.fbGood ? `<div class="fbr good"><span class="fbt">👍 잘한 점</span>${esc(a.fbGood)}</div>` : ""}
+    ${a.fbFix ? `<div class="fbr fix"><span class="fbt">✏️ 고칠 점</span>${esc(a.fbFix)}</div>` : ""}
+    ${a.fbRewrite ? `<div class="fbr rw"><span class="fbt">✅ 고친 문장 <small>(바뀐 단어 표시)</small></span><span class="en">${diffHtml(a.revised || a.answer, a.fbRewrite)}</span></div>` : ""}
+  </div>`;
+}
+
+function renderFbMake(filt) {
+  const graded = Object.values(st.answers).filter(a => a.gradedAt);
+  const inCls = (a) => st.cls === "all" || S.classOf(a.sid) === +st.cls;
+  const pool = graded.filter(a => inCls(a) && (st.fbOpt.q === "all" || a.qid === st.fbOpt.q));
+  const target = pool.filter(a => !(st.fbOpt.skip && hasFb(a)));
+  const pv = st.fbPreview;
+  $("#toolbar").innerHTML = `<h1>피드백 만들기</h1>${S.isLocal() ? '<span class="local-badge">로컬 모드</span>' : ""}`;
+  $("#page").innerHTML = `${filt}
+    <div class="banner gray"><div class="ico" style="background:linear-gradient(145deg,#ff9f0a,#ff375f)">✦</div>
+      <div><b>CSV 내려받기 → Claude에게 피드백 받기 → CSV 올리기</b>자가채점까지 마친 답안만 대상이에요. 올린 피드백은 문항별 '피드백 공개'를 켜야 학생에게 보여요.</div></div>
+
+    <div class="gtitle"><span class="stepn">1</span> 피드백용 CSV 내려받기</div>
+    <div class="group"><div class="row fbopts">
+      <label>문항 <select id="fbQ"><option value="all">전체 문항</option>${ITEMS.map(i => `<option value="${i.id}" ${st.fbOpt.q === i.id ? "selected" : ""}>${i.no}. ${esc(i.short)}</option>`).join("")}</select></label>
+      <label class="chk"><input type="checkbox" id="fbSkip" ${st.fbOpt.skip ? "checked" : ""}> 이미 피드백이 있는 답안은 빼기</label>
+      <span class="sp"></span>
+      <span class="note" style="margin:0">자가채점 완료 ${pool.length}개 중 <b>${target.length}개</b></span>
+      <button class="pill" id="fbDl" ${target.length ? "" : "disabled"}>CSV 내려받기</button>
+    </div></div>
+    <div class="note">위쪽의 반 선택도 적용돼요. 학생이 많으면 문항별로 나눠 내려받으면 Claude가 더 꼼꼼하게 처리해요.</div>
+
+    <div class="gtitle"><span class="stepn">2</span> Claude에게 피드백 받기</div>
+    <div class="group"><div class="row" style="line-height:1.7;font-size:13.5px">
+      claude.ai에서 <b>새 대화</b>를 열고 ① 내려받은 CSV 파일을 첨부한 뒤 ② 아래 프롬프트를 붙여 넣어 보내세요.<br>
+      Claude가 만들어 준 <b>피드백_완료.csv</b> 파일을 내려받아 3단계에서 올리면 돼요.
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="pill" id="fbCopy">📋 프롬프트 복사</button><button class="pill ghost" id="fbShow">프롬프트 보기</button><button class="pill ghost" id="fbMd">.md 파일로 내려받기</button></div>
+    </div></div>
+
+    <div class="gtitle"><span class="stepn">3</span> 피드백 CSV 올리기</div>
+    <label class="drop" id="fbDrop"><input type="file" id="fbFile" accept=".csv,text/csv" hidden>
+      <div class="big">⬆︎</div><b>피드백_완료.csv 를 끌어다 놓거나 눌러서 고르세요</b><span>학번 · 문항 번호 · 잘한 점 · 고칠 점 · 고친 문장 열을 읽어요</span></label>
+    <div id="fbPrev">${pv ? previewHtml(pv) : ""}</div>`;
+  $("#fbQ").onchange = (e) => { st.fbOpt.q = e.target.value; render(); };
+  $("#fbSkip").onchange = (e) => { st.fbOpt.skip = e.target.checked; render(); };
+  $("#fbDl").onclick = () => downloadFbCsv();
+  $("#fbCopy").onclick = async () => {
+    try { await navigator.clipboard.writeText(buildPrompt()); toast("프롬프트를 복사했어요", "Claude 대화창에 붙여 넣으세요.", "📋", "#34c759"); }
+    catch (e) { showPrompt(); }
+  };
+  $("#fbShow").onclick = showPrompt;
+  $("#fbMd").onclick = () => saveFile(new Blob([buildPrompt()], { type: "text/markdown;charset=utf-8" }), "Writing_Studio_피드백_프롬프트.md");
+  const drop = $("#fbDrop"), file = $("#fbFile");
+  file.onchange = () => file.files[0] && loadFbFile(file.files[0]);
+  ["dragover", "dragenter"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; f && loadFbFile(f); });
+  bindPreview();
+}
+
+function saveFile(blob, name) {
+  const url = URL.createObjectURL(blob), el = document.createElement("a");
+  el.href = url; el.download = name; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function stamp() { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}_${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`; }
+function downloadFbCsv() {
+  const { csv, count } = buildFeedbackCsv(st.students, st.answers, { qids: st.fbOpt.q === "all" ? null : [st.fbOpt.q], cls: st.cls, skipDone: st.fbOpt.skip });
+  if (!count) return toast("내보낼 답안이 없어요", "", "!", "#ff9f0a");
+  const part = st.fbOpt.q === "all" ? "전체문항" : `${ITEM[st.fbOpt.q].no}번`;
+  saveFile(new Blob([csv], { type: "text/csv;charset=utf-8" }), `피드백요청_${part}${st.cls !== "all" ? "_" + st.cls + "반" : ""}_${stamp()}.csv`);
+  toast("피드백용 CSV를 내려받았어요", `${count}개 답안 · 이제 프롬프트를 복사하세요`, "⬇︎", "#34c759");
+}
+function showPrompt() {
+  const b = sheet(`<h3 style="text-align:left;font-size:16px">Claude에게 보낼 프롬프트</h3>
+    <p style="text-align:left">CSV 파일을 첨부하고 이 내용을 그대로 붙여 넣으세요. 문항·조건·채점 기준표·예시 답안이 모두 들어 있어요.</p>
+    <textarea class="area" readonly style="min-height:46vh;font-size:12.5px;font-family:var(--mono)">${esc(buildPrompt())}</textarea>
+    <div class="btns"><button class="pill ghost" id="pClose">닫기</button><button class="pill" id="pCopy">전체 복사</button></div>`, true);
+  $("#pClose").onclick = closeSheet;
+  $("#pCopy").onclick = () => { const t = b.querySelector("textarea"); t.select(); try { navigator.clipboard.writeText(t.value); } catch (e) { document.execCommand("copy"); } toast("복사했어요", "", "📋", "#34c759"); };
+}
+
+async function loadFbFile(f) {
+  const buf = await f.arrayBuffer();
+  let text = new TextDecoder("utf-8").decode(buf), r = readFeedbackCsv(text);
+  if (r.error && text.includes("\uFFFD")) { try { text = new TextDecoder("euc-kr").decode(buf); r = readFeedbackCsv(text); } catch (e) {} }  // 엑셀에서 다시 저장한 CSV
+  if (r.error) { st.fbPreview = null; toast("CSV를 읽지 못했어요", r.error, "!", "#ff3b30"); render(); return; }
+  const rows = r.rows.map(x => {
+    const a = A(x.sid, x.qid), s = st.students[x.sid];
+    const empty = !(x.good || x.fix || x.rewrite);
+    return { ...x, name: s?.name || a?.name || "", st: !a ? "missing" : empty ? "empty" : hasFb(a) ? "over" : "new" };
+  });
+  st.fbPreview = { file: f.name, rows, bad: r.bad };
+  render();
+  $("#fbPrev").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function previewHtml(pv) {
+  const c = (k) => pv.rows.filter(r => r.st === k).length;
+  const lab = { new: ["새로 입력", "done"], over: ["덮어씀", "draft"], missing: ["답안 없음 · 건너뜀", "lock"], empty: ["빈 피드백 · 건너뜀", "lock"] };
+  return `<div class="gtitle">미리보기 · ${esc(pv.file)}<span class="r">새로 입력 ${c("new")} · 덮어씀 ${c("over")} · 건너뜀 ${c("missing") + c("empty") + pv.bad.length}</span></div>
+    ${pv.bad.length ? `<div class="banner gray" style="margin-bottom:10px"><div class="ico" style="background:#ff9f0a">!</div><div><b>읽지 못한 행 ${pv.bad.length}개</b>${esc(pv.bad.slice(0, 6).join(", "))}${pv.bad.length > 6 ? " …" : ""}</div></div>` : ""}
+    <div class="group" style="max-height:420px;overflow:auto"><table class="tbl fbtbl"><thead><tr><th>학번</th><th>이름</th><th>문항</th><th>잘한 점</th><th>고칠 점</th><th>고친 문장</th><th>처리</th></tr></thead><tbody>
+    ${pv.rows.map(r => `<tr><td class="mono">${r.sid}</td><td>${esc(r.name)}</td><td>${ITEM[r.qid].no}번</td>
+      <td><div class="clip">${esc(r.good)}</div></td><td><div class="clip">${esc(r.fix)}</div></td><td><div class="clip en">${esc(r.rewrite)}</div></td>
+      <td><span class="badge ${lab[r.st][1]}">${lab[r.st][0]}</span></td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="btns" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="pill ghost" id="pvCancel">취소</button>
+      <button class="pill green" id="pvApply" ${c("new") + c("over") ? "" : "disabled"}>피드백 ${c("new") + c("over")}개 입력하기</button></div>`;
+}
+function bindPreview() {
+  const x = $("#pvCancel"), y = $("#pvApply");
+  x && (x.onclick = () => { st.fbPreview = null; render(); });
+  y && (y.onclick = async () => {
+    const rows = st.fbPreview.rows.filter(r => r.st === "new" || r.st === "over");
+    const over = rows.filter(r => r.st === "over").length;
+    if (over) {
+      const ok = await confirmSheet({ icon: "✏️", title: "피드백을 입력할까요?", msg: `${rows.length}개 중 ${over}개는 이미 있는 피드백을 덮어써요.`, ok: "입력하기" });
+      if (!ok) return;
+    }
+    loading(true, "피드백을 입력하는 중…");
+    try {
+      const r = await S.saveFeedback(rows.map(({ sid, qid, good, fix, rewrite }) => ({ sid, qid, good, fix, rewrite })),
+        (d, t) => $("#loadingT").textContent = `피드백을 입력하는 중… ${d}/${t}`);
+      st.fbPreview = null; S.refreshNow();
+      const qs = [...new Set(rows.map(r => r.qid))];
+      toast(`피드백 ${r.updated}개를 입력했어요`, r.missing.length ? `${r.missing.length}개는 답안이 없어 건너뛰었어요` : "문항별 피드백 화면에서 확인하고 공개하세요.", "✓", "#34c759");
+      st.view = qs.length === 1 ? "fb-" + qs[0] : st.view; render();
+    } catch (e) { console.error(e); toast("입력하지 못했어요", e.code || "", "!", "#ff3b30"); }
+    finally { loading(false); }
+  });
+}
+
+function renderFbItem(q, filt) {
+  const i = ITEM[q], list = studentList();
+  const rows = list.map(s => ({ s, a: A(s.sid, q) })).filter(x => x.a && x.a.gradedAt);
+  const done = rows.filter(x => hasFb(x.a));
+  const f = st.fbFilter || "all";
+  const pick = rows.filter(x => f === "all" || (f === "has" ? hasFb(x.a) : !hasFb(x.a)));
+  $("#toolbar").innerHTML = `<h1>${i.no}번 피드백 <span style="font-weight:500;color:var(--text-2);font-size:13px">${esc(i.short)}</span></h1>
+    <span style="font-size:12px;color:var(--text-2)">학생에게 피드백 공개</span><button class="switch ${st.fb[q] ? "on" : ""}" id="fbOpen"></button>`;
+  $("#fbOpen").onclick = async (e) => {
+    const v = !st.fb[q]; e.currentTarget.classList.toggle("on", v);
+    try { await S.setFb(q, v); st.fb[q] = v; S.refreshNow(); toast(v ? `${i.no}번 피드백을 공개했어요` : `${i.no}번 피드백을 숨겼어요`, v ? "학생 화면 '선생님 피드백'에 30초 안에 나타나요." : "", v ? "🔓" : "🔒", v ? "#34c759" : "#8e8e93"); render(); }
+    catch (err) { console.error(err); toast("바꾸지 못했어요", err.code || "", "!", "#ff3b30"); render(); }
+  };
+  const seg = [["all", `전체 ${rows.length}`], ["has", `피드백 있음 ${done.length}`], ["none", `피드백 없음 ${rows.length - done.length}`]];
+  $("#page").innerHTML = `${filt}
+    ${st.fb[q] ? `<div class="banner green"><div class="ico" style="background:#34c759">🔓</div><div><b>학생에게 공개 중이에요.</b>여기서 고치면 학생 화면에도 바로 반영돼요.</div></div>`
+      : `<div class="banner gray"><div class="ico" style="background:#8e8e93">🔒</div><div><b>아직 학생에게 보이지 않아요.</b>피드백을 검토한 뒤 오른쪽 위 스위치를 켜면 공개돼요.</div></div>`}
+    <div class="filters"><div class="seg">${seg.map(([k, t]) => `<button data-ff="${k}" class="${f === k ? "on" : ""}">${t}</button>`).join("")}</div>
+      <span class="sp"></span><button class="pill ghost" data-go="fbmake">✦ 피드백 만들기</button></div>
+    ${pick.length ? `<div class="ans-list">${pick.map(({ s, a }) => `<div class="ans">
+        <div class="ah"><b>${s.sid} ${esc(s.name)}</b><span class="badge done">자가 ${a.selfTotal}/${i.points}</span>
+          ${a.fbAt ? `<span style="color:var(--text-2);font-size:12px">피드백 ${fmt(a.fbAt)}</span>` : ""}
+          <span class="r"><button class="pill ghost" data-fbedit="${s.sid}|${q}">${hasFb(a) ? "수정" : "직접 쓰기"}</button></span></div>
+        <div class="ab"><div><span class="lab">고쳐 쓴 답안</span>${esc(a.revised || a.answer)}</div><div><span class="lab">자가채점</span><span style="font-family:var(--font);font-size:12.5px;color:var(--text-2)">${i.rubric.map(r => `${esc(r.name)} ${a.scores?.[r.key] ?? "–"}/${r.max}${a.reasons?.[r.key] ? " · " + esc(a.reasons[r.key]) : ""}`).join("\n")}</span></div></div>
+        ${fbBlock(a)}</div>`).join("")}</div>`
+      : `<div class="empty">${rows.length ? "해당하는 답안이 없어요." : "아직 이 문항의 자가채점을 마친 학생이 없어요."}</div>`}`;
+  $$("[data-ff]").forEach(b => b.onclick = () => { st.fbFilter = b.dataset.ff; render(); });
+  $$("[data-fbedit]").forEach(b => b.onclick = () => { const [sid, qq] = b.dataset.fbedit.split("|"); fbEditor(sid, qq); });
+}
+
+function fbEditor(sid, q) {
+  const i = ITEM[q], a = A(sid, q), s = st.students[sid] || { name: a?.name || "" };
+  if (!a) return;
+  const b = sheet(`<h3 style="text-align:left;font-size:16px">${sid} ${esc(s.name)} · ${i.no}번 피드백</h3>
+    <div class="card" style="margin:10px 0"><div class="ch">고쳐 쓴 답안</div><div class="cb">${esc(a.revised || a.answer)}</div></div>
+    <div class="fbedit">
+      <label>👍 잘한 점<textarea class="area" id="eG" style="min-height:70px;font-size:14px">${esc(a.fbGood || "")}</textarea></label>
+      <label>✏️ 고칠 점<textarea class="area" id="eF" style="min-height:100px;font-size:14px">${esc(a.fbFix || "")}</textarea></label>
+      <label>✅ 고친 문장 (영어)<textarea class="area" id="eR" style="min-height:90px;font-size:14px;font-family:Georgia,serif" spellcheck="false">${esc(a.fbRewrite || "")}</textarea></label>
+    </div>
+    <div class="btns">${hasFb(a) ? '<button class="pill ghost" id="eDel" style="margin-right:auto;color:#ff3b30">피드백 지우기</button>' : ""}<button class="pill ghost" id="eNo">취소</button><button class="pill" id="eOk">저장</button></div>`, true);
+  const save = async (good, fix, rewrite) => {
+    loading(true, "저장하는 중…");
+    try { await S.saveFeedback([{ sid, qid: q, good, fix, rewrite }]); closeSheet(); S.refreshNow(); toast("피드백을 저장했어요", `${sid} ${s.name} · ${i.no}번`); }
+    catch (e) { console.error(e); toast("저장하지 못했어요", e.code || "", "!", "#ff3b30"); }
+    finally { loading(false); }
+  };
+  $("#eNo").onclick = closeSheet;
+  $("#eOk").onclick = () => save($("#eG").value.trim(), $("#eF").value.trim(), $("#eR").value.trim());
+  const d = $("#eDel"); d && (d.onclick = () => save("", "", ""));
 }
 
 /* ---------- 상세 ---------- */
@@ -171,11 +369,13 @@ function detail(sid, q) {
         ${i.rubric.map(r => `<dt>${esc(r.name)}</dt><dd><b>${a.scores?.[r.key] ?? "–"} / ${r.max}</b>${a.reasons?.[r.key] ? ` · ${esc(a.reasons[r.key])}` : ""}</dd>`).join("")}
         <dt>자가채점 합계</dt><dd><b>${a.selfTotal} / ${i.points}</b></dd>
         <dt>고쳐 쓴 답안</dt><dd style="font-family:Georgia,serif;font-size:14.5px">${esc(a.revised)}</dd>
-        <dt>자가채점 시각</dt><dd>${fmt(a.gradedAt)}</dd>` : ""}
+        <dt>자가채점 시각</dt><dd>${fmt(a.gradedAt)}</dd>
+        <dt>선생님 피드백</dt><dd>${fbBlock(a)}<span style="font-size:12px;color:var(--text-2)">${st.fb[q] ? "학생에게 공개 중" : "아직 학생에게 비공개"}</span></dd>` : ""}
     </dl>`;
   const b = sheet(`<h3 style="text-align:left;font-size:16px">${sid} ${esc(s.name)} · ${i.no}. ${esc(i.short)}</h3>${body}
-    <div class="btns">${a && a.submittedAt ? `<button class="pill ghost" id="dReopen" style="margin-right:auto">제출 취소 (다시 쓰게 하기)</button>` : ""}<button class="pill" id="dOk">닫기</button></div>`, true);
+    <div class="btns">${a && a.submittedAt ? `<button class="pill ghost" id="dReopen" style="margin-right:auto">제출 취소 (다시 쓰게 하기)</button>` : ""}${a && a.gradedAt ? '<button class="pill ghost" id="dFb">피드백 쓰기·수정</button>' : ""}<button class="pill" id="dOk">닫기</button></div>`, true);
   $("#dOk").onclick = closeSheet;
+  const dfb = $("#dFb"); dfb && (dfb.onclick = () => fbEditor(sid, q));
   const r = $("#dReopen");
   r && (r.onclick = async () => {
     closeSheet();
@@ -207,7 +407,7 @@ function exportCsv(all) {
   const list = studentList();
   st.cls = keepCls; st.q = keepQ;
   const head = ["학번", "반", "번호", "이름", "문항 번호", "문항", "유형", "상태", "답안", "이메일 서명", "단어 수", "제출 시각",
-    "조건 충족", ...KEYS.flatMap(([, n]) => [`${n} 점수`, `${n} 근거`]), "자가채점 합계", "만점", "고쳐 쓴 답안", "자가채점 시각", "마지막 저장 시각"];
+    "조건 충족", ...KEYS.flatMap(([, n]) => [`${n} 점수`, `${n} 근거`]), "자가채점 합계", "만점", "고쳐 쓴 답안", "자가채점 시각", "피드백: 잘한 점", "피드백: 고칠 점", "피드백: 고친 문장", "피드백 공개", "마지막 저장 시각"];
   const label = { none: "미작성", draft: "작성 중(미제출)", sub: "제출(자가채점 전)", done: "자가채점 완료" };
   const rows = [head];
   list.forEach(s => qs.forEach(q => {
@@ -219,7 +419,7 @@ function exportCsv(all) {
         const has = i.rubric.some(r => r.key === key);
         return a?.gradedAt && has ? [a.scores?.[key] ?? "", a.reasons?.[key] ?? ""] : ["", ""];
       }),
-      a?.gradedAt ? a.selfTotal : "", i.points, a?.revised || "", fmt(a?.gradedAt), fmt(a?.updatedAt)]);
+      a?.gradedAt ? a.selfTotal : "", i.points, a?.revised || "", fmt(a?.gradedAt), a?.fbGood || "", a?.fbFix || "", a?.fbRewrite || "", hasFb(a) ? (st.fb[q] ? "공개" : "비공개") : "", fmt(a?.updatedAt)]);
   }));
   if (rows.length === 1) return toast("내보낼 학생이 없어요", "", "!", "#ff9f0a");
   const csv = "﻿" + rows.map(r => r.map(csvCell).join(",")).join("\r\n");
@@ -250,7 +450,7 @@ function startData() {
   st.un.forEach(u => u()); st.un = [];
   $("#liveStatus").innerHTML = '<span class="spinner dark"></span>';
   st.un.push(S.watchAll(d => {
-    st.students = d.students || {}; st.answers = d.answers || {}; st.open = d.open || {};
+    st.students = d.students || {}; st.answers = d.answers || {}; st.open = d.open || {}; st.fb = d.fb || {};
     lastAt = Date.now(); $("#liveStatus").textContent = "● 방금 갱신";
     render();
   }, e => {

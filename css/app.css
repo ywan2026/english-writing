@@ -341,3 +341,39 @@ details.std div{font-size:12px;color:var(--text-2);line-height:1.6;margin:6px 4p
 .nav .qrow .switch:hover{background:rgba(0,0,0,.2)}
 [data-theme="dark"] .nav .qrow .switch:not(.on){background:rgba(255,255,255,.18)}
 .menubar .mi.admin{font-weight:600}
+
+/* ---------- 피드백 ---------- */
+.sp{flex:1}
+.badge.new-fb{background:linear-gradient(135deg,#ff9f0a,#ff375f);color:#fff}
+.nav button.active .badge.new-fb{background:#fff;color:#ff375f}
+mark.add{background:rgba(52,199,89,.28);color:inherit;border-radius:3px;padding:0 1px;box-shadow:0 1px 0 rgba(52,199,89,.6)}
+.fbx{border-top:1px solid var(--line);padding:10px 14px 12px;display:flex;flex-direction:column;gap:8px;background:rgba(255,159,10,.04)}
+.fbx.empty-fb{color:var(--text-3);font-size:12.5px}
+.fbr{font-size:13.5px;line-height:1.65;padding:10px 12px;border-radius:9px;background:var(--field);box-shadow:inset 0 0 0 .5px var(--field-line);white-space:pre-wrap;word-break:break-word}
+.fbr .fbt{display:block;font-size:11.5px;font-weight:700;color:var(--text-2);margin-bottom:3px;white-space:normal}
+.fbr .fbt small{font-weight:500;color:var(--text-3)}
+.fbr.good{box-shadow:inset 3px 0 0 #34c759,inset 0 0 0 .5px var(--field-line)}
+.fbr.fix{box-shadow:inset 3px 0 0 #ff9f0a,inset 0 0 0 .5px var(--field-line)}
+.fbr.rw{box-shadow:inset 3px 0 0 #0a84ff,inset 0 0 0 .5px var(--field-line)}
+.fbr .en,.clip.en{font-family:Georgia,"Times New Roman",var(--font);font-size:14.5px}
+.fblist{display:flex;flex-direction:column;gap:14px}
+.fbcard{border-radius:14px;background:var(--group);box-shadow:inset 0 0 0 .5px var(--line);padding:14px 16px 16px}
+.fbcard .fbr{margin-top:8px}
+.fbcard.muted{opacity:.75}
+.fbhead{display:flex;align-items:center;gap:10px;font-size:15px}
+.fbhead .badge:first-of-type{margin-left:auto}
+.fbwait{font-size:13px;color:var(--text-2);margin-top:8px}
+.stepn{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:inline-grid;place-items:center;font-size:11.5px;font-weight:800}
+.fbopts{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:13px}
+.fbopts select{border:0;border-radius:6px;padding:4px 8px;background:var(--field);box-shadow:inset 0 0 0 .5px var(--field-line);font-size:12.5px;margin-left:6px}
+.fbopts .chk{display:flex;align-items:center;gap:6px;cursor:pointer}
+.fbopts .chk input{accent-color:var(--accent)}
+.drop{display:flex;flex-direction:column;align-items:center;gap:4px;padding:26px;border-radius:14px;border:2px dashed var(--field-line);background:var(--group);cursor:pointer;text-align:center;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop .big{font-size:26px;color:var(--accent)}
+.drop span{font-size:12px;color:var(--text-2)}
+.fbtbl td{vertical-align:top;font-size:12.5px}
+.fbtbl .clip{max-width:240px;max-height:4.8em;overflow:hidden;line-height:1.6;white-space:pre-wrap}
+.fbtbl .clip.en{font-size:13px}
+.fbedit{display:flex;flex-direction:column;gap:10px}
+.fbedit label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:700;color:var(--text-2)}
